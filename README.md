@@ -1,18 +1,18 @@
-## UID: 123456789
+## UID:005717129
 (IMPORTANT: Only replace the above numbers with your true UID, do not modify spacing and newlines, otherwise your tarfile might not be created correctly)
 
 ## Pipe Up
 
-One sentence description
+This is low level code performed by the pipe (|) operator in shells.
 
 ## Building
 
-Explain briefly how to build your program
+After cloning the repository, navigate to the corresponding folder and build the program by running the command 'make'.
 
 ## Running
 
-Show an example run of your program, using at least two additional arguments, and what to expect
+" ./pipe ls" and expect the output to include Makefile, pipe, pipe.c, pipe.o, pycache, README.md, and test_lab1.py. Similarly, when running the command "./pipe ls cat wc", expect the output to show the values 7, 7, and 63.
 
 ## Cleaning up
 
-Explain briefly how to clean up all binary files
+Optional "make clean" 
