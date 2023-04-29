@@ -1,74 +1,94 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/wait.h>
+#include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <sys/wait.h>
+#define EXIT_FAILURE 1
 
 int main(int argc, char *argv[])
 {
-	int processes[argc - 1];
-	int i;
-	// exit with EINVAL if no program args
-	if (argc < 2) {
-		errno = EINVAL;
-		perror("Error occured");
-		exit(errno);
+	printf("begin\n");
+
+	int process_ids[argc];
+	int fds[2];
+
+	if (pipe(fds)) {
+		exit(EXIT_FAILURE);
 	}
-	
-	for (i = 1; i < argc - 1; i++) {
-		// creating the pipe 
-		int fd[2];
-		if (pipe(fd) < 0) {
-			perror("Pipe");
-			exit(errno);
-		}
-		int pid = fork(); 
-		if (pid == 0) {
-			if (dup2(fd[1], 1) < 0) {
-				perror("Dup2");
-				exit(errno);
-			}
-			close(fd[1]);
-			close(fd[0]);
-			if (execlp(argv[i], argv[i], NULL) < 0) {
-				perror("execlp");
-				exit(errno);
-			}
-		}
-		else if (pid < 0) {
-			perror("Fork");
-			exit(errno);
-		}
-		// parent process
-		processes[i] = pid;
-		if (dup2(fd[0], 0) < 0) {
-			perror("dup2");
-			exit(errno);
-		}
-		close(fd[1]);
+
+	int rc = fork();
+	if (rc < 0) {
+		exit(EXIT_FAILURE);
 	}
-	// for the last program in the list
-	int last = fork();
-	if (last < 0) {
-		perror("Fork");
-		exit(errno);
-	}
-	else if (last == 0) {
-		execlp(argv[i], argv[i], NULL);
+
+	else if (rc == 0) {
+		printf("child process 1 (before loop)");
+		dup2(fds[1], STDOUT_FILENO);
+		// dup2(fds[0], STDIN_FILENO);
+		int execlp_ret = execlp(argv[1], argv[1], (char *) NULL);
 		perror("execlp");
-		return(errno);
+		exit(EXIT_FAILURE);
+	}
+
+	else {
+		int status = 0;
+		waitpid(rc, &status, 0);
+		close(fds[1]); // close the write end - close the read end only after we've read from it in the next process
+		printf("Child process 1 exits with code: %d\n", WEXITSTATUS(status));
+	}
+
+	// int fd_read = fds[0];
+
+	for (int i = 2; i < argc - 1; i++) {
+		// close fds[0] here
+		close(fds[0]);
+		
+		if (pipe(fds)) {
+			exit(EXIT_FAILURE);
+		}	
+
+		int rc1 = fork(); // return code
+		if (rc1 < 0) {
+			exit(EXIT_FAILURE);
+		}
+
+		else if (rc1 == 0) {
+			printf("child process in loop");
+			dup2(fds[1], STDOUT_FILENO);
+			dup2(fds[0], STDIN_FILENO);
+			int execlp_ret = execlp(argv[i], argv[i], (char *) NULL);
+			perror("execlp");
+			exit(EXIT_FAILURE);
+		}
+		else {
+			int status = 0;
+			waitpid(rc1, &status, 0);
+			close(fds[1]);
+			printf("Child process in loop exits with code: %d\n", WEXITSTATUS(status));
+		}
+	}
+
+	// if (pipe(fds)) {
+	// 	exit(EXIT_FAILURE);
+	// }
+
+	int rc_last = fork();
+	if (rc_last < 0) {
+		exit(EXIT_FAILURE);
+	}
+	else if (rc_last == 0) {
+		printf("child process after loop");
+		dup2(fds[0], STDIN_FILENO);
+		int execlp_ret = execlp(argv[argc-1], argv[argc-1], (char *) NULL);
+		perror("execlp");
+		exit(EXIT_FAILURE);
 	}
 	else {
-		processes[i] = last;
+		int status = 0;
+		waitpid(rc_last, &status, 0);
+		close(fds[1]);
+		printf("Child process after loop exits with code: %d\n", WEXITSTATUS(status));
 	}
-	for (int o = 0)
-
-	int status = 0; // variable to hold the status of each children
-	for (int i = 1; i < argc; i++) {
-		waitpid(processes[i], &status, 0);
-		if (WEXITSTATUS(status) != 0) {
-			exit(WEXITSTATUS(status));
-		}
-	}
+	return 0;
 }
