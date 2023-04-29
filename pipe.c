@@ -1,94 +1,79 @@
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <errno.h>
 #include <sys/wait.h>
-#define EXIT_FAILURE 1
+#include <unistd.h>
 
-int main(int argc, char *argv[])
-{
-	printf("begin\n");
+int main(int argc, char *argv[]) {
+    int num_commands = argc - 1;
+    int pipe_commands[num_commands - 1][2];
 
-	int process_ids[argc];
-	int fds[2];
+    if (num_commands == 0) {
+        fprintf(stderr, "error: no arguments provided\n");
+        exit(EINVAL);
+    }
 
-	if (pipe(fds)) {
-		exit(EXIT_FAILURE);
-	}
+    for (int i = 0; i < num_commands - 1; i++) {
+        if (pipe(pipe_commands[i]) == -1) {
+            exit(errno);
+        }
+    }
 
-	int rc = fork();
-	if (rc < 0) {
-		exit(EXIT_FAILURE);
-	}
+    for (int i = 0; i < num_commands; i++) {
+        
+		int pid = fork();
 
-	else if (rc == 0) {
-		printf("child process 1 (before loop)");
-		dup2(fds[1], STDOUT_FILENO);
-		// dup2(fds[0], STDIN_FILENO);
-		int execlp_ret = execlp(argv[1], argv[1], (char *) NULL);
-		perror("execlp");
-		exit(EXIT_FAILURE);
-	}
+        if (pid == -1) {
+            exit(errno);
+        }
+		else if (pid == 0) {
+            if (i > 0) {
+                if (dup2(pipe_commands[i - 1][0], STDIN_FILENO) == -1) {
+                    exit(errno);
+                }
+            }
 
-	else {
-		int status = 0;
-		waitpid(rc, &status, 0);
-		close(fds[1]); // close the write end - close the read end only after we've read from it in the next process
-		printf("Child process 1 exits with code: %d\n", WEXITSTATUS(status));
-	}
+            if (i < num_commands - 1) {
+                if (dup2(pipe_commands[i][1], STDOUT_FILENO) == -1) {
+                    exit(errno);
+                }
+            }
 
-	// int fd_read = fds[0];
+            for (int j = 0; j < num_commands - 1; j++) {
+                if (close(pipe_commands[j][0]) == -1) {
+                    exit(errno);
+                }
+                if (close(pipe_commands[j][1]) == -1) {
+                    exit(errno);
+                }
+            }
 
-	for (int i = 2; i < argc - 1; i++) {
-		// close fds[0] here
-		close(fds[0]);
-		
-		if (pipe(fds)) {
-			exit(EXIT_FAILURE);
-		}	
-
-		int rc1 = fork(); // return code
-		if (rc1 < 0) {
-			exit(EXIT_FAILURE);
+            if (execlp(argv[i + 1], argv[i + 1], NULL) == -1) {
+				exit(errno);
+			}
+			
 		}
+    }
 
-		else if (rc1 == 0) {
-			printf("child process in loop");
-			dup2(fds[1], STDOUT_FILENO);
-			dup2(fds[0], STDIN_FILENO);
-			int execlp_ret = execlp(argv[i], argv[i], (char *) NULL);
-			perror("execlp");
-			exit(EXIT_FAILURE);
-		}
-		else {
-			int status = 0;
-			waitpid(rc1, &status, 0);
-			close(fds[1]);
-			printf("Child process in loop exits with code: %d\n", WEXITSTATUS(status));
-		}
-	}
+    for (int i = 0; i < num_commands - 1; i++) {
+        if (close(pipe_commands[i][0]) == -1) {
+            exit(errno);
+        }
+        if (close(pipe_commands[i][1]) == -1) {
+            exit(errno);
+        }
+    }
 
-	// if (pipe(fds)) {
-	// 	exit(EXIT_FAILURE);
-	// }
-
-	int rc_last = fork();
-	if (rc_last < 0) {
-		exit(EXIT_FAILURE);
-	}
-	else if (rc_last == 0) {
-		printf("child process after loop");
-		dup2(fds[0], STDIN_FILENO);
-		int execlp_ret = execlp(argv[argc-1], argv[argc-1], (char *) NULL);
-		perror("execlp");
-		exit(EXIT_FAILURE);
-	}
-	else {
-		int status = 0;
-		waitpid(rc_last, &status, 0);
-		close(fds[1]);
-		printf("Child process after loop exits with code: %d\n", WEXITSTATUS(status));
-	}
-	return 0;
+    int status;
+	int exit_status = 0;
+    for (int i = 0; i < num_commands; i++) {
+        if (wait(&status) == -1) {
+            exit(errno);
+        }
+        if (status != 0) {
+            exit_status = 1;
+        }
+    }
+    return exit_status;
 }
